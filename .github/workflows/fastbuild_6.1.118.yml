@@ -566,8 +566,10 @@ jobs:
           wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/lib/libfakestat.so
           wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/lib/libfaketimeMT.so
           chmod 777 ./*.so
-          export FAKESTAT="2025-05-25 12:00:00"
-          export FAKETIME="@2025-05-25 13:00:00"
+          export FAKESTAT="2025-08-25 13:49:08"
+          export FAKETIME="@2025-08-25 13:49:08"
+          export TZ="UTC"
+
           echo "FAKESTAT=$FAKESTAT" >> $GITHUB_ENV
           echo "FAKETIME=$FAKETIME" >> $GITHUB_ENV
           SO_DIR=$(pwd)
@@ -609,6 +611,13 @@ jobs:
           sudo rm -rf /usr/local/lib/android &
           sudo rm -rf /opt/ghc &
           sudo rm -rf /opt/hostedtoolcache/CodeQL &
+          # 强制固定内核构建时间
+          cd kernel_workspace/common
+          echo "#define LINUX_COMPILE_DATE \"Aug 25 2025\"" > include/generated/compile.h
+          echo "#define LINUX_COMPILE_TIME \"13:49:08\"" >> include/generated/compile.h
+          echo "#define LINUX_COMPILE \"Aug 25 2025 13:49:08\"" >> include/generated/compile.h
+          echo "#define UTS_VERSION \"#1 SMP Mon Aug 25 13:49:08 UTC 2025\"" >> include/generated/compile.h
+
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" LD="ld.lld" HOSTLD=ld.lld O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error gki_defconfig &&
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="$(pwd)/cc-wrapper" LD="$(pwd)/ld-wrapper" HOSTLD=ld.lld O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error Image
           
