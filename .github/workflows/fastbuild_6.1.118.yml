@@ -539,7 +539,7 @@ jobs:
             done
           fi
            
-      - name: 构建内核
+            - name: 构建内核
         run: |
           WORKDIR="$(pwd)"
           export PATH="/usr/lib/ccache:$PATH"
@@ -562,14 +562,15 @@ jobs:
           export CCACHE_MAXSIZE="3G"
           echo "sloppiness = file_stat_matches,include_file_ctime,include_file_mtime,pch_defines,file_macro,time_macros" >> "$CCACHE_DIR/ccache.conf"
           
+          # 进入内核源码目录
           cd kernel_workspace/common
           wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/lib/libfakestat.so
           wget https://github.com/$GITHUB_REPOSITORY/raw/refs/heads/$GITHUB_REF_NAME/lib/libfaketimeMT.so
           chmod 777 ./*.so
+          # 固定你要的内核时间
           export FAKESTAT="2025-08-25 13:49:08"
           export FAKETIME="@2025-08-25 13:49:08"
           export TZ="UTC"
-
           echo "FAKESTAT=$FAKESTAT" >> $GITHUB_ENV
           echo "FAKETIME=$FAKETIME" >> $GITHUB_ENV
           SO_DIR=$(pwd)
@@ -587,14 +588,14 @@ jobs:
           echo 'export FAKETIME="'$FAKETIME'"' >> ld-wrapper
           echo 'ld.lld "$@"' >> ld-wrapper
           
-          # 测试时间劫持测试是否正常工作
+          # 时间劫持测试
           echo "--- [Wrapper Test] 正在创建通用的时间劫持测试脚本 ---"
           echo '#!/bin/bash' > test-wrapper.sh
           echo 'export LD_PRELOAD="'$PRELOAD_LIBS'"' >> test-wrapper.sh
           echo 'export FAKESTAT="'$FAKESTAT'"' >> test-wrapper.sh
           echo 'export FAKETIME="'$FAKETIME'"' >> test-wrapper.sh
           echo 'echo ">>> Wrapper 内部环境检查完毕."' >> test-wrapper.sh
-          echo 'exec "$@"' >> test-wrapper.sh # 执行所有传入的参数
+          echo 'exec "$@"' >> test-wrapper.sh
           chmod +x test-wrapper.sh
           echo "--- [Wrapper Test] 正在测试 (date) 命令 ---"
           ./test-wrapper.sh date
@@ -605,23 +606,24 @@ jobs:
           echo "--- 编译前环境时间: $(LD_PRELOAD=$PRELOAD_LIBS date) ---"
           echo "--- 编译前环境文件时间戳: ---"
           LD_PRELOAD=$PRELOAD_LIBS stat ./Makefile
+
+          # 🔴 强制锁定内核构建时间（你要的精确时间）
+          mkdir -p include/generated
+          echo "#define LINUX_COMPILE_DATE \"Aug 25 2025\""          >  include/generated/compile.h
+          echo "#define LINUX_COMPILE_TIME \"13:49:08\""             >> include/generated/compile.h
+          echo "#define LINUX_COMPILE \"Aug 25 2025 13:49:08\""      >> include/generated/compile.h
+          echo "#define UTS_VERSION \"#1 SMP PREEMPT Mon Aug 25 13:49:08 UTC 2025\"" >> include/generated/compile.h
           
-          #在构建内核的同时清除不必要的.NET, Android NDK, Haskell, CodeQL运行库，清理空间且不阻塞后续步骤运行
+          # 清理空间（后台执行不阻塞编译）
           sudo rm -rf /usr/share/dotnet &
           sudo rm -rf /usr/local/lib/android &
           sudo rm -rf /opt/ghc &
           sudo rm -rf /opt/hostedtoolcache/CodeQL &
-          # 强制固定内核构建时间
-          cd kernel_workspace/common
-          echo "#define LINUX_COMPILE_DATE \"Aug 25 2025\"" > include/generated/compile.h
-          echo "#define LINUX_COMPILE_TIME \"13:49:08\"" >> include/generated/compile.h
-          echo "#define LINUX_COMPILE \"Aug 25 2025 13:49:08\"" >> include/generated/compile.h
-          echo "#define UTS_VERSION \"#1 SMP Mon Aug 25 13:49:08 UTC 2025\"" >> include/generated/compile.h
-
+          
+          # 编译内核（路径正确，无需重复cd）
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" LD="ld.lld" HOSTLD=ld.lld O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error gki_defconfig &&
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="$(pwd)/cc-wrapper" LD="$(pwd)/ld-wrapper" HOSTLD=ld.lld O=out KCFLAGS+=-O2 KCFLAGS+=-Wno-error Image
           
-          # 编译后时间劫持二次校验
           echo "--- 编译后环境时间: $(LD_PRELOAD=$PRELOAD_LIBS date) ---"
           echo "--- 编译后环境文件时间戳: ---"
           LD_PRELOAD=$PRELOAD_LIBS stat ./Makefile
@@ -630,6 +632,7 @@ jobs:
           ccache -s
           echo "编译后空间:"
           df -h
+
 
       - name: 保存新的 ccache 缓存
         if: inputs.ccache_update || steps.ccache-restore.outputs.cache-hit != 'true'
